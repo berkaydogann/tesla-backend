@@ -1,70 +1,45 @@
-// Node.js'in kendi icindeki https modulu. Kurulum gerektirmez.
-const https = require('https');
+const axios = require('axios');
 
 export default async function handler(req, res) {
+  // 1. Token Kontrolü
   const authHeader = req.headers.authorization;
-
   if (!authHeader) {
-    return res.status(401).json({ error: "Token bulunamadi" });
+    return res.status(401).json({ error: "Token eksik! Uygulamadan gonderilmedi." });
   }
 
   const token = authHeader.split(' ')[1];
 
-  // Promise yapisi kuruyoruz cunku https modulu callback ile calisir
-  const makeRequest = () => {
-    return new Promise((resolve, reject) => {
-      
-      const options = {
-        hostname: 'fleet-api.prd.eu.tesla.com',
-        path: '/api/1/vehicles',
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'User-Agent': 'Eroni-Backend/1.0'
-        }
-      };
-
-      const reqTesla = https.request(options, (resTesla) => {
-        let data = '';
-
-        // Veri parca parca gelir, onlari topluyoruz
-        resTesla.on('data', (chunk) => {
-          data += chunk;
-        });
-
-        // Veri bitince
-        resTesla.on('end', () => {
-          try {
-            // Gelen veri JSON mi diye kontrol et
-            if (!data || data.trim() === '') {
-                return resolve({ status: resTesla.statusCode, body: {} });
-            }
-            const jsonData = JSON.parse(data);
-            resolve({ status: resTesla.statusCode, body: jsonData });
-          } catch (e) {
-            reject(new Error("Tesla'dan gelen veri JSON degil: " + data));
-          }
-        });
-      });
-
-      reqTesla.on('error', (error) => {
-        reject(error);
-      });
-
-      reqTesla.end();
-    });
-  };
-
   try {
-    console.log("Tesla Fleet API'ye istek atiliyor (Native HTTPS)...");
-    const response = await makeRequest();
+    console.log("Tesla Fleet API'ye istek atiliyor (Axios)...");
+    
+    // 2. Tesla'ya İstek (Axios kullanarak)
+    const response = await axios.get('https://fleet-api.prd.eu.tesla.com/api/1/vehicles', {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'User-Agent': 'Eroni-Backend/1.0'
+      }
+    });
 
-    // Basarili donus
-    return res.status(response.status).json(response.body);
+    // 3. Başarılı Cevap
+    return res.status(200).json(response.data);
 
   } catch (error) {
-    console.error("Baglanti Hatasi:", error.message);
-    return res.status(500).json({ error: "Sunucu Baglanti Hatasi", details: error.message });
+    // Hata Detaylarını Yakala
+    console.error("Tesla Baglanti Hatasi:", error.message);
+    
+    if (error.response) {
+      // Tesla'dan cevap geldi ama hata kodu dondu (Orn: 401, 403)
+      return res.status(error.response.status).json({
+        error: "Tesla API Hatasi",
+        details: error.response.data
+      });
+    } else if (error.request) {
+      // İstek gitti ama cevap gelmedi (Network hatasi)
+      return res.status(503).json({ error: "Tesla Sunucusuna Ulasilamadi", details: error.message });
+    } else {
+      // Kodun icinde baska bir hata oldu
+      return res.status(500).json({ error: "Backend Kod Hatasi", details: error.message });
+    }
   }
 }
