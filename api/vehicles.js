@@ -1,19 +1,20 @@
+const axios = require('axios');
+
 export default async function handler(req, res) {
-  // 1. Mobil uygulamadan gelen Token'i al
   const authHeader = req.headers.authorization;
 
   if (!authHeader) {
-    return res.status(401).json({ error: "Token eksik!" });
+    return res.status(401).json({ error: "Token bulunamadi" });
   }
 
-  // "Bearer XYZ..." -> "XYZ..." temizligi
-  const token = authHeader.split(' ')[1]; 
+  // "Bearer XYZ" -> "XYZ"
+  const token = authHeader.split(' ')[1];
 
   try {
-    // 2. Tesla Fleet API'ye (Avrupa) Server-to-Server istek at
-    // Vercel sunucusu oldugu icin Network Hatasi almazsin.
-    const response = await fetch('https://fleet-api.prd.eu.tesla.com/api/1/vehicles', {
-      method: 'GET',
+    console.log("Tesla Fleet API'ye istek atiliyor...");
+    
+    // Axios, Node.js ortaminda SSL ve Baglantilari daha iyi yonetir
+    const response = await axios.get('https://fleet-api.prd.eu.tesla.com/api/1/vehicles', {
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
@@ -21,17 +22,20 @@ export default async function handler(req, res) {
       }
     });
 
-    const data = await response.json();
-
-    // 3. Tesla'nin cevabini mobil uygulamaya aynen ilet
-    if (!response.ok) {
-      return res.status(response.status).json(data);
-    }
-
-    return res.status(200).json(data);
+    // Tesla'dan gelen cevabi aynen ilet
+    return res.status(200).json(response.data);
 
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: "Vercel Hatasi", details: error.message });
+    console.error("Tesla Baglanti Hatasi:", error.message);
+    
+    // Eger Tesla hata donerse detayini gorelim
+    if (error.response) {
+      return res.status(error.response.status).json({
+        error: "Tesla API Hatasi",
+        details: error.response.data
+      });
+    }
+
+    return res.status(500).json({ error: "Vercel Sunucu Hatasi", details: error.message });
   }
 }
